@@ -1,0 +1,76 @@
+---
+- name: Initialize Kubernetes Master and configure kubeconfig
+  hosts: k8s_master
+  become: yes
+  tasks:
+    - name: Initialize Kubernetes cluster with pod network CIDR
+      shell: kubeadm init --pod-network-cidr=192.168.1.0/24 --ignore-preflight-errors=Mem
+      args:
+        creates: /etc/kubernetes/admin.conf
+      register: kubeadm_init
+
+    - name: Print kubeadm init output for joining workers
+      debug:
+        var: kubeadm_init.stdout_lines
+      when: kubeadm_init.changed
+
+    - name: Create .kube directory
+      shell: mkdir -p $HOME/.kube
+      when: kubeadm_init.changed
+
+    - name: Copy Kubernetes admin config to .kube/config
+      shell: sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+      when: kubeadm_init.changed
+
+    - name: Change ownership of .kube/config
+      shell: sudo chown $(id -u):$(id -g) $HOME/.kube/config
+      when: kubeadm_init.changed
+
+    - name: Apply Flannel network configuration
+      shell: kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/v0.25.4/Documentation/kube-flannel.yml
+      when: kubeadm_init.changed
+
+    - name: Check kube-proxy config diff
+      shell: |
+        kubectl get configmap kube-proxy -n kube-system -o yaml | \
+        sed -e "s/strictARP: false/strictARP: true/" | \
+        kubectl diff -f - -n kube-system
+      ignore_errors: yes
+      register: kube_proxy_diff
+      changed_when: kube_proxy_diff.rc == 2  # Only consider it changed when the return code is 2 (diff detected)
+
+    - name: Apply kube-proxy config changes
+      shell: |
+        kubectl get configmap kube-proxy -n kube-system -o yaml | \
+        sed -e "s/strictARP: false/strictARP: true/" | \
+        kubectl apply -f - -n kube-system
+      ignore_errors: yes
+      changed_when: kube_proxy_diff.rc == 2  # Only apply changes if there is a diff
+      when: kube_proxy_diff.rc == 2  # Only apply changes if there is a diff
+
+    - name: Apply MetalLB native configuration
+      shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml
+      when: kubeadm_init.changed
+
+    - name: Apply MetalLB FRR configuration
+      shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-frr.yaml
+      when: kubeadm_init.changed
+
+    - name: Configure MetalLB with ConfigMap
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          namespace: metallb-system
+          name: config
+        data:
+          config: |
+            address-pools:
+            - name: default
+              protocol: layer2
+              addresses:
+              - 192.168.1.38-192.168.1.48
+        ---
+        EOF
+      when: kubeadm_init.changed
