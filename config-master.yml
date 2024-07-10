@@ -48,29 +48,31 @@
       changed_when: kube_proxy_diff.rc == 2  # Only apply changes if there is a diff
       when: kube_proxy_diff.rc == 2  # Only apply changes if there is a diff
 
-    - name: Apply MetalLB native configuration
-      shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml
-      when: kubeadm_init.changed
+## Following tasks are optional and can be used to configure MetalLB LoadBalancer, uncomment if you have Raspberry Pi 4B or similar hardware with 2GB or more RAM
 
-    - name: Apply MetalLB FRR configuration
-      shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-frr.yaml
-      when: kubeadm_init.changed
+    # - name: Apply MetalLB native configuration
+    #   shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-native.yaml
+    #   when: kubeadm_init.changed
 
-    - name: Configure MetalLB with ConfigMap
-      shell: |
-        cat <<EOF | kubectl apply -f -
-        apiVersion: v1
-        kind: ConfigMap
-        metadata:
-          namespace: metallb-system
-          name: config
-        data:
-          config: |
-            address-pools:
-            - name: default
-              protocol: layer2
-              addresses:
-              - 192.168.1.38-192.168.1.48
-        ---
-        EOF
-      when: kubeadm_init.changed
+    # - name: Apply MetalLB FRR configuration
+    #   shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-frr.yaml
+    #   when: kubeadm_init.changed
+
+    # - name: Configure MetalLB with ConfigMap
+    #   shell: |
+    #     cat <<EOF | kubectl apply -f -
+    #     apiVersion: v1
+    #     kind: ConfigMap
+    #     metadata:
+    #       namespace: metallb-system
+    #       name: config
+    #     data:
+    #       config: |
+    #         address-pools:
+    #         - name: default
+    #           protocol: layer2
+    #           addresses:
+    #           - 192.168.1.38-192.168.1.48
+    #     ---
+    #     EOF
+    #   when: kubeadm_init.changed
