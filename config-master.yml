@@ -4,7 +4,7 @@
   become: yes
   tasks:
     - name: Initialize Kubernetes cluster with pod network CIDR
-      shell: kubeadm init --pod-network-cidr=192.168.1.0/24 --ignore-preflight-errors=Mem
+      shell: kubeadm init --pod-network-cidr=10.244.0.0/16 --ignore-preflight-errors=Mem
       args:
         creates: /etc/kubernetes/admin.conf
       register: kubeadm_init
@@ -30,6 +30,13 @@
       shell: kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/v0.25.4/Documentation/kube-flannel.yml
       when: kubeadm_init.changed
 
+    - name: Update kube-flannel-cfg ConfigMap with new network configuration
+      shell: |
+        kubectl get configmap kube-flannel-cfg -n kube-flannel -o yaml | \
+        sed 's/"Network": ".*"/"Network": "192.168.0.0\/16"/' | \
+        kubectl apply -f - -n kube-flannel
+      when: kubeadm_init.changed
+    
     - name: Check kube-proxy config diff
       shell: |
         kubectl get configmap kube-proxy -n kube-system -o yaml | \
@@ -37,7 +44,7 @@
         kubectl diff -f - -n kube-system
       ignore_errors: yes
       register: kube_proxy_diff
-      changed_when: kube_proxy_diff.rc == 2  # Only consider it changed when the return code is 2 (diff detected)
+      changed_when: kube_proxy_diff.rc == 1  # Only consider it changed when the return code is 1 (diff detected)
 
     - name: Apply kube-proxy config changes
       shell: |
@@ -45,8 +52,7 @@
         sed -e "s/strictARP: false/strictARP: true/" | \
         kubectl apply -f - -n kube-system
       ignore_errors: yes
-      changed_when: kube_proxy_diff.rc == 2  # Only apply changes if there is a diff
-      when: kube_proxy_diff.rc == 2  # Only apply changes if there is a diff
+      when: kube_proxy_diff.rc == 1  # Only apply changes if there is a diff
 
 ## Following tasks are optional and can be used to configure MetalLB LoadBalancer, uncomment if you have Raspberry Pi 4B or similar hardware with 2GB or more RAM
 
